@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Автобус 190</title>
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #111318; --muted: #6b7180;
+    --line: #e3e5ea; --accent: #1f9d55; --warn: #d97706; --bad: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #191c22; --text: #f2f3f5; --muted: #8b91a0;
+      --line: #2a2e37; --accent: #34c172; --warn: #f59e0b; --bad: #f87171;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding: max(16px, env(safe-area-inset-top)) 16px 32px; max-width: 520px; margin: 0 auto; }
+
+  .tabs { display: flex; gap: 6px; background: var(--card); padding: 4px; border-radius: 14px; border: 1px solid var(--line); }
+  .tab { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 14px;
+    font-weight: 600; padding: 10px 6px; border-radius: 10px; cursor: pointer; line-height: 1.2; }
+  .tab[aria-selected="true"] { background: var(--accent); color: #fff; }
+  .tab small { display: block; font-weight: 400; font-size: 11px; opacity: .85; margin-top: 2px; }
+
+  .hero { margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+    padding: 22px 20px; text-align: center; }
+  .label { color: var(--muted); font-size: 14px; }
+  .big { font-size: 88px; font-weight: 800; line-height: 1; margin: 8px 0 4px; font-variant-numeric: tabular-nums; letter-spacing: -2px; }
+  .big .unit { font-size: 26px; font-weight: 600; letter-spacing: 0; margin-left: 6px; color: var(--muted); }
+  .at { font-size: 18px; font-weight: 600; }
+  .leave { margin-top: 14px; padding: 10px 12px; border-radius: 12px; font-weight: 600; font-size: 15px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+  .leave.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+  .leave.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+  .note { margin-top: 12px; color: var(--muted); font-size: 14px; }
+
+  .next { margin-top: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .chip { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 6px; text-align: center; }
+  .chip b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .chip span { color: var(--muted); font-size: 13px; }
+
+  .walk { margin-top: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; font-size: 14px; }
+  .stepper { display: flex; align-items: center; gap: 8px; }
+  .stepper button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
+    color: var(--text); font-size: 20px; cursor: pointer; }
+  .stepper output { min-width: 52px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  details { margin-top: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 4px 14px; }
+  summary { cursor: pointer; padding: 10px 0; font-weight: 600; font-size: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; padding: 4px 0 12px; }
+  .grid span { text-align: center; padding: 6px 0; border-radius: 8px; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .grid .past { color: var(--muted); opacity: .5; }
+  .grid .cur { background: var(--accent); color: #fff; font-weight: 700; }
+  .foot { margin-top: 16px; text-align: center; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+  <div class="tabs" role="tablist" id="tabs"></div>
+
+  <section class="hero" id="hero"></section>
+  <div class="next" id="next"></div>
+
+  <div class="walk">
+    <span>Идти до остановки</span>
+    <div class="stepper">
+      <button id="minus" aria-label="Меньше">−</button>
+      <output id="walkVal">0 мин</output>
+      <button id="plus" aria-label="Больше">+</button>
+    </div>
+  </div>
+
+  <details id="full">
+    <summary id="fullTitle">Расписание на сегодня</summary>
+    <div class="grid" id="grid"></div>
+  </details>
+
+  <div class="foot">Автобус 190 · расписание из Яндекс Карт · работает офлайн</div>
+
+<script>
+// Расписание из Яндекс Карт (октябрь 2026). Суббота и воскресенье одинаковые.
+const STOPS = [
+  {
+    id: "center",
+    name: "Центр / Администрация",
+    sub: "утром, → вокзал",
+    dest: "у вокзала",
+    ride: 36, // мин до «ЖД вокзал / Автовокзал», оттуда ~3 мин пешком до Ярмарки
+    weekday: "06:15 06:32 06:49 07:06 07:23 07:40 07:57 08:14 08:31 08:48 09:05 09:22 09:39 09:56 10:18 10:40 11:02 11:24 11:46 12:08 12:30 12:52 13:14 13:36 13:58 14:20 14:42 15:04 15:26 15:48 16:10 16:32 16:54 17:16 17:37 17:58 18:19 18:59 19:39 20:19 21:04 21:49",
+    weekend: "06:25 06:55 07:25 07:55 08:25 08:55 09:25 09:55 10:25 10:55 11:25 11:55 12:25 12:55 13:25 13:50 14:15 14:40 15:05 15:30 15:55 16:20 16:45 17:10 17:35 18:00 18:25 18:50 19:15 20:05 20:55 21:45 22:35"
+  },
+  {
+    id: "yarmarka",
+    name: "ТЦ Ярмарка",
+    sub: "вечером, → Началово",
+    dest: "в Центре",
+    ride: 35, // мин до «Центр / Администрация»
+    weekday: "06:02 06:19 06:36 06:53 07:10 07:27 07:44 08:01 08:18 08:35 08:52 09:14 09:36 09:58 10:20 10:42 11:04 11:26 11:48 12:10 12:32 12:54 13:16 13:38 14:00 14:22 14:44 15:06 15:28 15:50 16:02 16:32 16:53 17:14 17:35 17:56 18:17 19:02 19:47 20:32 21:17 22:02",
+    weekend: "06:02 06:32 07:02 07:32 08:02 08:32 09:02 09:32 10:02 10:32 11:02 11:32 12:02 12:27 12:52 13:17 13:42 14:07 14:32 14:57 15:22 15:47 16:12 16:37 17:02 17:27 17:52 18:17 18:42 19:32 20:22 21:12 22:02"
+  }
+];
+const toMins = s => s.split(" ").map(t => { const [h, m] = t.split(":"); return h * 60 + +m; });
+STOPS.forEach(s => { s.weekday = toMins(s.weekday); s.weekend = toMins(s.weekend); });
+
+// Нерабочие праздничные будни по производственному календарю РФ (с переносами).
+const HOLIDAYS = new Set([
+  // 2026
+  "2026-01-01", "2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09",
+  "2026-02-23", "2026-03-09", "2026-05-01", "2026-05-11", "2026-06-12", "2026-11-04", "2026-12-31",
+  // 2027
+  "2027-01-01", "2027-01-04", "2027-01-05", "2027-01-06", "2027-01-07", "2027-01-08",
+  "2027-02-22", "2027-02-23", "2027-03-08", "2027-05-03", "2027-05-10", "2027-06-14",
+  "2027-11-04", "2027-11-05", "2027-12-31"
+]);
+// Рабочие субботы (переносы) — считаем, что автобус ходит по будням.
+const WORKING_SATURDAYS = new Set(["2027-02-20"]);
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+
+// Для проверки: index.html?now=2026-10-26T08:40
+const fakeNow = new URLSearchParams(location.search).get("now");
+const offset = fakeNow ? new Date(fakeNow) - Date.now() : 0;
+const getNow = () => new Date(Date.now() + offset);
+
+// Утром едем из Центра, после обеда — обратно с Ярмарки.
+const autoStop = d => d.getHours() < 13 ? "center" : "yarmarka";
+let current = autoStop(getNow());
+const stop = () => STOPS.find(s => s.id === current);
+const walkKey = () => "walk:" + current;
+
+const pad = n => String(n).padStart(2, "0");
+const fmt = m => pad(Math.floor(m / 60) % 24) + ":" + pad(m % 60);
+const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const DAYS = ["в воскресенье", "в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу"];
+
+function dayInfo(d) {
+  const key = dateKey(d);
+  if (WORKING_SATURDAYS.has(key)) return { type: "weekday", label: "рабочая суббота" };
+  if (HOLIDAYS.has(key)) return { type: "weekend", label: "праздник", holiday: true };
+  const wd = d.getDay();
+  if (wd === 0 || wd === 6) return { type: "weekend", label: "выходной" };
+  return { type: "weekday", label: "будни" };
+}
+
+// Ближайшие рейсы, начиная с текущего момента, с переходом на следующие дни.
+function upcoming(now, count) {
+  const out = [];
+  const nowSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  for (let day = 0; day < 3 && out.length < count; day++) {
+    const d = new Date(now); d.setDate(d.getDate() + day);
+    for (const m of stop()[dayInfo(d).type]) {
+      const diff = day * 86400 + m * 60 - nowSec;
+      if (diff >= 0) { out.push({ m, day, date: d, secs: diff }); if (out.length >= count) break; }
+    }
+  }
+  return out;
+}
+
+function human(secs) {
+  const min = Math.floor(secs / 60);
+  if (min < 60) return { num: min, unit: "мин" };
+  const h = Math.floor(min / 60), r = min % 60;
+  if (h >= 10) return { num: h, unit: "ч" };
+  return { num: r ? `${h}:${pad(r)}` : h, unit: "ч" };
+}
+
+function whenLabel(item) {
+  if (item.day === 0) return "";
+  if (item.day === 1) return "завтра ";
+  return DAYS[item.date.getDay()] + " ";
+}
+
+function select(id) { current = id; renderTabs(); renderWalk(); render(); }
+
+function renderTabs() {
+  const el = document.getElementById("tabs");
+  el.innerHTML = "";
+  STOPS.forEach(s => {
+    const b = document.createElement("button");
+    b.className = "tab"; b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", s.id === current);
+    b.innerHTML = `${s.name}<small>${s.sub}</small>`;
+    b.onclick = () => select(s.id);
+    el.appendChild(b);
+  });
+}
+
+function renderWalk() {
+  document.getElementById("walkVal").textContent = store.get(walkKey(), 0) + " мин";
+}
+function changeWalk(delta) {
+  const v = Math.max(0, Math.min(60, store.get(walkKey(), 0) + delta));
+  store.set(walkKey(), v); renderWalk(); render();
+}
+document.getElementById("minus").onclick = () => changeWalk(-1);
+document.getElementById("plus").onclick = () => changeWalk(1);
+
+function render() {
+  const now = getNow();
+  const today = dayInfo(now);
+  const walk = store.get(walkKey(), 0);
+  const list = upcoming(now, 6);
+  const hero = document.getElementById("hero");
+
+  // С учётом дороги: первый рейс, на который ещё можно успеть.
+  const main = walk ? list.find(x => x.secs >= walk * 60) : list[0];
+  const rest = list.filter(x => x.secs > main.secs).slice(0, 3);
+
+  const h = human(main.secs);
+  const soon = main.day === 0 && main.secs < 60;
+  let note = "";
+  if (main.day > 0) note = `<div class="note">Сегодня рейсов больше нет.</div>`;
+  else if (today.holiday) note = `<div class="note">Сегодня праздник — показано расписание выходного дня, на деле может отличаться.</div>`;
+  else if (today.type === "weekend") note = `<div class="note">Выходной — расписание выходного дня.</div>`;
+
+  let leave = "";
+  if (walk && main.secs - walk * 60 < 3600) {
+    const missed = list[0] !== main && list[0].day === 0
+      ? `<div class="leave bad">На ${fmt(list[0].m)} уже не успеть</div>` : "";
+    const lm = Math.floor((main.secs - walk * 60) / 60);
+    leave = missed + `<div class="leave ${lm <= 2 ? "warn" : ""}">${lm <= 0 ? "Выходи сейчас!" : `Выходи через ${lm} мин`}</div>`;
+  }
+
+  hero.innerHTML = `
+    <div class="label">${stop().name} · ближайший ${whenLabel(main)}</div>
+    <div class="big">${soon ? "сейчас" : h.num}${soon ? "" : `<span class="unit">${h.unit}</span>`}</div>
+    <div class="at">в ${fmt(main.m)}</div>
+    <div class="note">Будешь ${stop().dest} ≈ ${fmt(main.m + stop().ride)} · в пути ~${stop().ride} мин</div>
+    ${leave}${note}`;
+
+  document.getElementById("next").innerHTML = rest.map(x => {
+    const hh = human(x.secs);
+    return `<div class="chip"><b>${fmt(x.m)}</b><span>${x.day ? whenLabel(x).trim() : `через ${hh.num} ${hh.unit}`}</span></div>`;
+  }).join("");
+
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  document.getElementById("fullTitle").textContent = `Расписание на сегодня (${today.label})`;
+  document.getElementById("grid").innerHTML = stop()[today.type].map(m => {
+    const cls = main.day === 0 && m === main.m ? "cur" : (m < nowMin ? "past" : "");
+    return `<span class="${cls}">${fmt(m)}</span>`;
+  }).join("");
+}
+
+renderTabs(); renderWalk(); render();
+setInterval(render, 5000);
+
+// Вернулся в приложение спустя время — заново выбираем остановку по часам.
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (hiddenAt && Date.now() - hiddenAt > 10 * 60 * 1000) select(autoStop(getNow()));
+  else render();
+});
+
+if ("serviceWorker" in navigator && location.protocol !== "file:") {
+  navigator.serviceWorker.register("sw.js");
+}
+</script>
+</body>
+</html>
