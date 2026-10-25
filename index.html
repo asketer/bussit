@@ -61,6 +61,21 @@
   .grid span { text-align: center; padding: 6px 0; border-radius: 8px; font-variant-numeric: tabular-nums; font-size: 14px; }
   .grid .past { color: var(--muted); opacity: .5; }
   .grid .cur { background: var(--accent); color: #fff; font-weight: 700; }
+  .seg { display: flex; gap: 4px; background: var(--bg); padding: 3px; border-radius: 10px; margin: 2px 0 10px; }
+  .seg button { flex: 1; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px;
+    font-weight: 600; padding: 8px 4px; border-radius: 8px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .12); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; font-size: 14px; }
+  .row input[type="time"] { font: inherit; font-size: 18px; font-weight: 700; padding: 6px 10px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .plan { padding: 2px 0 14px; }
+  .plan-main { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 12px; padding: 12px 14px; }
+  .plan-main .stopname { color: var(--muted); font-size: 13px; }
+  .plan-main .dep { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0; }
+  .plan-main .arr { font-size: 14px; }
+  .plan-main.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+  .plan-alt { margin-top: 8px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .plan-alt b { color: var(--text); font-variant-numeric: tabular-nums; }
   .foot { margin-top: 16px; text-align: center; color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -80,8 +95,20 @@
   </div>
 
   <details id="full">
-    <summary id="fullTitle">Расписание на сегодня</summary>
+    <summary id="fullTitle">Расписание</summary>
+    <div class="seg" id="gridDay"></div>
     <div class="grid" id="grid"></div>
+  </details>
+
+  <details id="planner">
+    <summary>Успеть к времени</summary>
+    <div class="seg" id="planDest"></div>
+    <div class="seg" id="planDay"></div>
+    <div class="row">
+      <span>Надо быть на месте к</span>
+      <input type="time" id="planTime" value="09:00">
+    </div>
+    <div class="plan" id="planOut"></div>
   </details>
 
   <div class="foot">Автобус 190 · расписание из Яндекс Карт · работает офлайн</div>
@@ -245,12 +272,87 @@ function render() {
     return `<div class="chip"><b>${fmt(x.m)}</b><span>${x.day ? whenLabel(x).trim() : `через ${hh.num} ${hh.unit}`}</span></div>`;
   }).join("");
 
+  renderGrid(now, today, main);
+  renderPlan();
+}
+
+// Кнопки-переключатели: options = [[значение, подпись], ...].
+function seg(id, options, value, onPick) {
+  const el = document.getElementById(id);
+  el.innerHTML = "";
+  options.forEach(([v, label]) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.setAttribute("aria-pressed", v === value);
+    b.onclick = () => onPick(v);
+    el.appendChild(b);
+  });
+}
+
+// Полное расписание: сегодня или любой тип дня.
+let gridDay = "today";
+function renderGrid(now, today, main) {
+  seg("gridDay", [["today", "Сегодня"], ["weekday", "Будни"], ["weekend", "Выходные"]], gridDay,
+    v => { gridDay = v; render(); });
+  const isToday = gridDay === "today";
+  const type = isToday ? today.type : gridDay;
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  document.getElementById("fullTitle").textContent = `Расписание на сегодня (${today.label})`;
-  document.getElementById("grid").innerHTML = stop()[today.type].map(m => {
-    const cls = main.day === 0 && m === main.m ? "cur" : (m < nowMin ? "past" : "");
+  document.getElementById("fullTitle").textContent =
+    `Расписание · ${stop().name} · ${isToday ? `сегодня (${today.label})` : type === "weekday" ? "будни" : "выходные"}`;
+  document.getElementById("grid").innerHTML = stop()[type].map(m => {
+    const cls = !isToday ? "" : main.day === 0 && m === main.m ? "cur" : (m < nowMin ? "past" : "");
     return `<span class="${cls}">${fmt(m)}</span>`;
   }).join("");
+}
+
+// Планировщик: надо быть в точке к времени — на какой автобус садиться.
+const DESTS = { center: { label: "В Центр", from: "yarmarka", place: "в Центре" },
+                vokzal: { label: "К вокзалу", from: "center", place: "у вокзала" } };
+const plan = {
+  dest: store.get("plan:dest", "center"),
+  day: store.get("plan:day", dayInfo(getNow()).type),
+  time: store.get("plan:time", "09:00")
+};
+const timeInput = document.getElementById("planTime");
+timeInput.value = plan.time;
+timeInput.oninput = () => { if (timeInput.value) { plan.time = timeInput.value; store.set("plan:time", plan.time); renderPlan(); } };
+
+function renderPlan() {
+  seg("planDest", Object.entries(DESTS).map(([k, d]) => [k, d.label]), plan.dest,
+    v => { plan.dest = v; store.set("plan:dest", v); renderPlan(); });
+  seg("planDay", [["weekday", "Будни"], ["weekend", "Выходные"]], plan.day,
+    v => { plan.day = v; store.set("plan:day", v); renderPlan(); });
+
+  const dest = DESTS[plan.dest];
+  const from = STOPS.find(s => s.id === dest.from);
+  const [th, tm] = plan.time.split(":");
+  const target = th * 60 + +tm;
+  const walk = store.get("walk:" + from.id, 0);
+  const deps = from[plan.day];
+  const ok = deps.filter(m => m + from.ride <= target);
+  const best = ok[ok.length - 1];
+  const late = deps.find(m => m + from.ride > target);
+  const out = document.getElementById("planOut");
+
+  if (best === undefined) {
+    out.innerHTML = `<div class="plan-main bad">
+      <div class="stopname">${from.name}</div>
+      <div class="arr">К ${plan.time} не успеть: первый рейс в ${fmt(deps[0])} будет ${dest.place} ≈ ${fmt(deps[0] + from.ride)}.</div></div>`;
+    return;
+  }
+  const spare = target - (best + from.ride);
+  const prev = ok[ok.length - 2];
+  out.innerHTML = `<div class="plan-main">
+      <div class="stopname">Садись на остановке «${from.name}»</div>
+      <div class="dep">${fmt(best)}</div>
+      <div class="arr">Будешь ${dest.place} ≈ ${fmt(best + from.ride)} · запас ${spare} мин</div>
+      ${walk ? `<div class="arr">Выйти из дома в ${fmt(best - walk)} (идти ${walk} мин)</div>` : ""}
+    </div>
+    <div class="plan-alt">
+      ${prev !== undefined ? `Пораньше: <b>${fmt(prev)}</b> → ${fmt(prev + from.ride)}<br>` : ""}
+      ${late !== undefined ? `Следующий <b>${fmt(late)}</b> уже опоздает на ${late + from.ride - target} мин<br>` : ""}
+      Время в пути ~${from.ride} мин по расписанию, без учёта пробок.
+    </div>`;
 }
 
 renderTabs(); renderWalk(); render();
