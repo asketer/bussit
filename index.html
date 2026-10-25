@@ -108,6 +108,14 @@
       <span>Надо быть на месте к</span>
       <input type="time" id="planTime" value="09:00">
     </div>
+    <div class="row">
+      <span id="planWalkLabel">Идти до остановки</span>
+      <div class="stepper">
+        <button id="planMinus" aria-label="Меньше">−</button>
+        <output id="planWalkVal">0 мин</output>
+        <button id="planPlus" aria-label="Больше">+</button>
+      </div>
+    </div>
     <div class="plan" id="planOut"></div>
   </details>
 
@@ -234,6 +242,15 @@ function changeWalk(delta) {
 document.getElementById("minus").onclick = () => changeWalk(-1);
 document.getElementById("plus").onclick = () => changeWalk(1);
 
+// То же время ходьбы, но для остановки посадки из планировщика.
+function changePlanWalk(delta) {
+  const key = "walk:" + DESTS[plan.dest].from;
+  store.set(key, Math.max(0, Math.min(60, store.get(key, 0) + delta)));
+  renderWalk(); render();
+}
+document.getElementById("planMinus").onclick = () => changePlanWalk(-1);
+document.getElementById("planPlus").onclick = () => changePlanWalk(1);
+
 function render() {
   const now = getNow();
   const today = dayInfo(now);
@@ -328,6 +345,8 @@ function renderPlan() {
   const [th, tm] = plan.time.split(":");
   const target = th * 60 + +tm;
   const walk = store.get("walk:" + from.id, 0);
+  document.getElementById("planWalkLabel").textContent = `Идти до «${from.name}»`;
+  document.getElementById("planWalkVal").textContent = walk + " мин";
   const deps = from[plan.day];
   const ok = deps.filter(m => m + from.ride <= target);
   const best = ok[ok.length - 1];
@@ -346,7 +365,7 @@ function renderPlan() {
       <div class="stopname">Садись на остановке «${from.name}»</div>
       <div class="dep">${fmt(best)}</div>
       <div class="arr">Будешь ${dest.place} ≈ ${fmt(best + from.ride)} · запас ${spare} мин</div>
-      ${walk ? `<div class="arr">Выйти из дома в ${fmt(best - walk)} (идти ${walk} мин)</div>` : ""}
+      ${walk ? `<div class="arr">Выходи в ${fmt(best - walk)} (идти ${walk} мин)</div>` : ""}
     </div>
     <div class="plan-alt">
       ${prev !== undefined ? `Пораньше: <b>${fmt(prev)}</b> → ${fmt(prev + from.ride)}<br>` : ""}
