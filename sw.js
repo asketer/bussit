@@ -1,5 +1,5 @@
 // Меняй версию при каждом обновлении расписания, чтобы телефон подтянул новое.
-const CACHE = "bus190-v5";
+const CACHE = "bus190-v6";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", e => {

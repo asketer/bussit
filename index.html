@@ -74,6 +74,18 @@
   .plan-main .dep { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 2px 0; }
   .plan-main .arr { font-size: 14px; }
   .plan-main.bad { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+  .pick { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .nav { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--card);
+    color: var(--text); font-size: 26px; line-height: 1; cursor: pointer; }
+  .nav:disabled { opacity: .3; cursor: default; }
+  .trips { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+  .trip { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 10px;
+    padding: 6px 2px; font: inherit; cursor: pointer; }
+  .trip b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .trip span { font-size: 11px; color: var(--accent); }
+  .trip.late span { color: var(--bad); }
+  .trip.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--card)); }
+  .trip.late.sel { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--card)); }
   .plan-alt { margin-top: 8px; font-size: 13px; color: var(--muted); line-height: 1.5; }
   .plan-alt b { color: var(--text); font-variant-numeric: tabular-nums; }
   .foot { margin-top: 16px; text-align: center; color: var(--muted); font-size: 12px; }
@@ -330,15 +342,22 @@ const plan = {
   day: store.get("plan:day", dayInfo(getNow()).type),
   time: store.get("plan:time", "09:00")
 };
+let planShift = 0; // на сколько рейсов отлистали от лучшего; сбрасывается при смене условий
 const timeInput = document.getElementById("planTime");
 timeInput.value = plan.time;
-timeInput.oninput = () => { if (timeInput.value) { plan.time = timeInput.value; store.set("plan:time", plan.time); renderPlan(); } };
+timeInput.oninput = () => { if (timeInput.value) { plan.time = timeInput.value; store.set("plan:time", plan.time); planShift = 0; renderPlan(); } };
+
+const trips = n => n + " " + (n % 10 === 1 && n % 100 !== 11 ? "рейс"
+  : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? "рейса" : "рейсов");
+
+const dur = m => m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч${m % 60 ? " " + (m % 60) + " мин" : ""}`;
+const durShort = m => m < 60 ? `${m}` : `${Math.floor(m / 60)}ч${pad(m % 60)}`;
 
 function renderPlan() {
   seg("planDest", Object.entries(DESTS).map(([k, d]) => [k, d.label]), plan.dest,
-    v => { plan.dest = v; store.set("plan:dest", v); renderPlan(); });
+    v => { plan.dest = v; store.set("plan:dest", v); planShift = 0; renderPlan(); });
   seg("planDay", [["weekday", "Будни"], ["weekend", "Выходные"]], plan.day,
-    v => { plan.day = v; store.set("plan:day", v); renderPlan(); });
+    v => { plan.day = v; store.set("plan:day", v); planShift = 0; renderPlan(); });
 
   const dest = DESTS[plan.dest];
   const from = STOPS.find(s => s.id === dest.from);
@@ -348,30 +367,44 @@ function renderPlan() {
   document.getElementById("planWalkLabel").textContent = `Идти до «${from.name}»`;
   document.getElementById("planWalkVal").textContent = walk + " мин";
   const deps = from[plan.day];
-  const ok = deps.filter(m => m + from.ride <= target);
-  const best = ok[ok.length - 1];
-  const late = deps.find(m => m + from.ride > target);
   const out = document.getElementById("planOut");
 
-  if (best === undefined) {
-    out.innerHTML = `<div class="plan-main bad">
-      <div class="stopname">${from.name}</div>
-      <div class="arr">К ${plan.time} не успеть: первый рейс в ${fmt(deps[0])} будет ${dest.place} ≈ ${fmt(deps[0] + from.ride)}.</div></div>`;
-    return;
-  }
-  const spare = target - (best + from.ride);
-  const prev = ok[ok.length - 2];
-  out.innerHTML = `<div class="plan-main">
-      <div class="stopname">Садись на остановке «${from.name}»</div>
-      <div class="dep">${fmt(best)}</div>
-      <div class="arr">Будешь ${dest.place} ≈ ${fmt(best + from.ride)} · запас ${spare} мин</div>
-      ${walk ? `<div class="arr">Выходи в ${fmt(best - walk)} (идти ${walk} мин)</div>` : ""}
+  // Последний рейс, на котором успеваешь; дальше его можно листать раньше/позже.
+  let bestIdx = -1;
+  deps.forEach((m, i) => { if (m + from.ride <= target) bestIdx = i; });
+  const sel = Math.max(0, Math.min(deps.length - 1, (bestIdx < 0 ? 0 : bestIdx) + planShift));
+  const dep = deps[sel], arr = dep + from.ride, diff = target - arr;
+
+  let badge = "";
+  if (bestIdx < 0 && sel === 0) badge = `К ${plan.time} не успеть ни на один — это самый первый рейс`;
+  else if (sel === bestIdx) badge = "Последний, на котором успеваешь";
+  else if (sel < bestIdx) badge = `На ${trips(bestIdx - sel)} раньше`;
+  else badge = `На ${trips(sel - bestIdx)} позже — опоздаешь`;
+
+  const from0 = Math.max(0, Math.min(sel - 2, deps.length - 5));
+  const chips = deps.slice(from0, from0 + 5).map((m, k) => {
+    const i = from0 + k, d = target - (m + from.ride);
+    return `<button class="trip ${i === sel ? "sel" : ""} ${d < 0 ? "late" : ""}" data-i="${i}">
+      <b>${fmt(m)}</b><span>${d >= 0 ? `+${durShort(d)}` : `−${durShort(-d)}`}</span></button>`;
+  }).join("");
+
+  out.innerHTML = `<div class="plan-main ${diff < 0 ? "bad" : ""}">
+      <div class="stopname">Садись на «${from.name}» · ${badge}</div>
+      <div class="pick">
+        <button class="nav" id="planPrev" aria-label="Раньше" ${sel === 0 ? "disabled" : ""}>‹</button>
+        <div class="dep">${fmt(dep)}</div>
+        <button class="nav" id="planNext" aria-label="Позже" ${sel === deps.length - 1 ? "disabled" : ""}>›</button>
+      </div>
+      <div class="arr">Будешь ${dest.place} ≈ ${fmt(arr)} · ${diff >= 0 ? `запас ${dur(diff)}` : `опоздаешь на ${dur(-diff)}`}</div>
+      ${walk ? `<div class="arr">Выходи в ${fmt(dep - walk)} (идти ${walk} мин)</div>` : ""}
     </div>
-    <div class="plan-alt">
-      ${prev !== undefined ? `Пораньше: <b>${fmt(prev)}</b> → ${fmt(prev + from.ride)}<br>` : ""}
-      ${late !== undefined ? `Следующий <b>${fmt(late)}</b> уже опоздает на ${late + from.ride - target} мин<br>` : ""}
-      Время в пути ~${from.ride} мин по расписанию, без учёта пробок.
-    </div>`;
+    <div class="trips">${chips}</div>
+    <div class="plan-alt">Время в пути ~${from.ride} мин по расписанию, без учёта пробок.</div>`;
+
+  const shiftTo = i => { planShift = i - (bestIdx < 0 ? 0 : bestIdx); renderPlan(); };
+  document.getElementById("planPrev").onclick = () => shiftTo(sel - 1);
+  document.getElementById("planNext").onclick = () => shiftTo(sel + 1);
+  out.querySelectorAll(".trip").forEach(b => b.onclick = () => shiftTo(+b.dataset.i));
 }
 
 renderTabs(); renderWalk(); render();
